@@ -402,3 +402,19 @@ body.paused *,body.paused *::before,body.paused *::after{animation-play-state:pa
 .page-404{min-height:52vh;display:grid;align-content:center}
 .page-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
 .page-simple .nav .btn-nav{margin-left:auto}
+
+/* Le couloir sur téléphone tenu droit (classe posée par le script) : textes en bas, plan du couloir sur toute la largeur, pas de cartel au survol */
+.scene.debout .band-f1,.scene.debout .band-f2{left:20px;right:20px;width:auto;top:auto;bottom:clamp(170px,27vh,250px);transform:none}
+.scene.debout .band-f1 h1,.scene.debout .band .titre{font-size:clamp(1.75rem,8vw,2.5rem)}
+.scene.debout .band .sub{font-size:1rem;max-width:34ch}
+.scene.debout .titres .band{width:calc(100vw - 40px);bottom:clamp(150px,24vh,230px)}
+.scene.debout .band-porte{width:calc(100vw - 40px);bottom:clamp(110px,17vh,170px)}
+.scene.debout .band-porte .titre{font-size:clamp(1.7rem,7.6vw,2.4rem)}
+.scene.debout .plan{left:12px;right:12px;bottom:12px;width:auto;padding:10px 10px 8px;-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(18,11,7,.86)}
+.scene.debout .plan-titre span{display:none}
+.scene.debout .plan-ailes button{min-height:40px;font-size:.6875rem}
+.scene.debout .cartel{display:none}
+.scene.debout .astuce{bottom:128px;white-space:nowrap}
+.scene.debout .chargement{bottom:22px;width:calc(100vw - 32px);padding:18px 20px 16px;gap:12px}
+.scene.debout .chargement-msg{font-size:1.0625rem}
+.scene.debout .cadre{box-shadow:0 0 0 1px #0d0806,0 3px 8px rgba(0,0,0,.55)}

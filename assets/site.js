@@ -93,7 +93,11 @@ const Balade = (() => {
   const OCTETS = [22395243, 17917385, 19989676];   // tailles réelles des deux vidéos, écrites par _outils/taille-videos.mjs (secours si le serveur ne donne pas Content-Length)
   const FONDS = ['assets/decor/mur-a.jpg', 'assets/decor/mur-b.jpg']; const NB = D.ailes.length; const F = 400;   // durée du film d'entrée, en vh de scroll (8 s de film)
   const REPART = { 1: [1], 2: [2], 3: [1, 2], 4: [2, 2], 5: [2, 3], 6: [2, 2, 2], 7: [2, 3, 2], 8: [3, 2, 3], 9: [3, 2, 4], 10: [3, 3, 4], 11: [4, 3, 4], 12: [4, 4, 4] };
-  const ZONE = { x: 0.5, y: 0.435, w: 0.548, h: 0.595, sol: 0.772 };
+  // Téléphone tenu droit : le plan du mur (16:9) déborde largement de l'écran, on n'en voit que la bande centrale. La zone d'accrochage s'y adapte,
+  // les films et les images passent en version verticale légère (suffixe -m), et l'accrochage se fait sur deux colonnes.
+  const DEBOUT = innerHeight > innerWidth * 1.05, VISIBLE = Math.min(1, (innerWidth / innerHeight) / 1.849), M = DEBOUT ? '-m' : '';
+  const ZONE = DEBOUT ? { x: 0.5, y: 0.425, w: 0.9 * VISIBLE, h: 0.6, sol: 0.772 } : { x: 0.5, y: 0.435, w: 0.548, h: 0.595, sol: 0.772 };
+  const OCTETS_M = [2534000, 2066000, 2097000];
   // position de la porte dans le film (temps s, centre x, haut y, largeur), en fractions de l'image. À re-mesurer si le film change.
   const PORTE = [[0, .494, .112, .404], [0.5, .494, .096, .417], [1.0, .495, .078, .433], [1.5, .496, .052, .456], [2.0, .496, .013, .487], [2.5, .497, -.03, .52]];
   let stations = [], trous = [], S_TOTAL = 1, sAiles = [], sTitres = [], sFin = [0, 1];
@@ -103,13 +107,17 @@ const Balade = (() => {
 
   /* --- deux vidéos scrubbées, chacune avec son verrou de seek --- */
   function scrub(video) {
-    let busy = false, pending = null;
-    const seek = (t) => { if (!video.duration) return; if (busy) { pending = t; return; } if (Math.abs(video.currentTime - t) < 0.012) return; busy = true; video.currentTime = t; };
+    let busy = false, pending = null, tBusy = 0;
+    // garde-fou : sur iPhone il arrive que "seeked" ne revienne jamais. Au bout de 300 ms on considère le saut comme fait, sinon le film resterait figé.
+    const seek = (t) => { if (!video.duration) return; if (busy && performance.now() - tBusy > 300) busy = false; if (busy) { pending = t; return; } if (Math.abs(video.currentTime - t) < 0.012) return; busy = true; tBusy = performance.now(); video.currentTime = t; };
     video.addEventListener('seeked', () => { busy = false; if (pending !== null) { const t = pending; pending = null; seek(t); } });
     video.addEventListener('error', () => { busy = false; pending = null; if (video.id !== 'arrivee') video.parentElement.classList.add('video-failed'); });
     return seek;
   }
+  const TACTILE = matchMedia('(pointer: coarse)').matches;
   const seekFilm = scrub(vFilm), seekMarche = scrub(vMarche), seekArrivee = scrub(vArrivee);
+  // si le téléphone a refusé le lancement automatique (mode économie d'énergie), le premier toucher déverrouille les trois films
+  if (TACTILE) addEventListener('touchstart', () => { [vFilm, vMarche, vArrivee].forEach((v) => { if (v.src && v.paused && v.readyState < 2) { const pr = v.play(); if (pr && pr.then) pr.then(() => v.pause()).catch(() => {}); } }); }, { once: false, passive: true });
   // Chargement : une vraie jauge au centre pour le film d'entrée (avec les petites phrases maison), puis un simple filet en bas d'écran pour les plans suivants
   const jauge = $('.chargement'), jaugeMsg = $('.chargement-msg'), jaugePct = $('.chargement-pct span'), jaugeBarre = $('.chargement-barre'), filet = $('.filet');
   const MSGS = ["J'allume les appliques", 'Je redresse les cadres', 'Un coup de chiffon sur le laiton', 'Je cherche la bonne clé', "J'arrose les plantes", "C'est presque ouvert"];
@@ -141,14 +149,35 @@ const Balade = (() => {
         if (now - dernier > 100 || f === 1) { dernier = now; jaugeMaj(f, principal); }
       }
       clearTimeout(garde);
+      video.muted = true; video.playsInline = true; video.setAttribute('webkit-playsinline', '');
       video.src = URL.createObjectURL(new Blob(morceaux, { type: "video/mp4" })); video.load();
-      await new Promise((ok) => video.addEventListener("canplay", ok, { once: true }));
+      await new Promise((ok) => {
+        let fini = false; const f = () => { if (!fini) { fini = true; ok(); } };
+        video.addEventListener("canplay", f, { once: true }); video.addEventListener("loadeddata", f, { once: true });
+        // Safari sur iPhone ne décode aucune image tant que la vidéo n'a pas été lancée une fois : on la lance muette, puis pause aussitôt
+        if (TACTILE) { const pr = video.play(); if (pr && pr.then) pr.then(() => { video.pause(); f(); }).catch(() => {}); setTimeout(f, 7000); }
+      });
       video.parentElement.classList.add("video-ready"); video.classList.add("pret"); jaugeFin(principal, true); sale = true; reveille();
     } catch (e) { clearTimeout(garde); jaugeFin(video === vFilm, false); if (video.id !== "arrivee") video.parentElement.classList.add("video-failed"); }
   }
 
   /* --- accrochage de salon : rangées justifiées de hauteurs différentes, décalées, qui remplissent le mur --- */
+  // Accrochage pour écran debout : rangées justifiées de même largeur, deux pièces par rangée en général, une seule quand elle est très large.
+  function accrocheDebout(items) {
+    const W = 5, G = 0.16, rs = items.map((i) => i.ratio || 1.78), cible = (ZONE.w * 16) / (ZONE.h * 9); let best = null;
+    for (let R = 1.0; R <= 4.2; R += 0.1) {                 // R = somme des formats visée par rangée : on essaie, on garde le bloc qui remplit le mieux le mur
+      const rangs = [[]]; let som = 0;
+      rs.forEach((r, i) => { const cur = rangs[rangs.length - 1]; if (cur.length && (som + r > R + 0.35 || cur.length >= 3)) { rangs.push([i]); som = r; } else { cur.push(i); som += r; } });
+      const hs = rangs.map((g) => (W - G * (g.length - 1)) / g.reduce((a, i) => a + rs[i], 0)); const H = hs.reduce((a, b) => a + b, 0) + G * (rangs.length - 1);
+      const asp = W / H, cout = (1 - Math.min(asp / cible, cible / asp)) + (Math.max(...hs) / Math.min(...hs) - 1) * 0.35;
+      if (!best || cout < best.cout - 1e-9) best = { cout, rangs, hs };
+    }
+    const pl = []; let y = 0;
+    best.rangs.forEach((g, r) => { let u = -W / 2; const h = best.hs[r]; g.forEach((i) => { const w = h * rs[i]; pl.push({ it: items[i], u: u + w / 2, t: y, w, h }); u += w + G; }); y += h + G; });
+    const bh = y - G; pl.forEach((q) => { q.t -= bh / 2; }); return { pl, bw: W, bh };
+  }
   function salon(items) {
+    if (DEBOUT) return accrocheDebout(items);
     const n = items.length, W = 5, G = 0.13, portraits = items.every((i) => (i.ratio || 1.78) < 0.9), larg = [0.94, 1, 0.9, 0.96], decal = [-0.04, 0.03, -0.05, 0.04];
     let idx = 0, y = 0; const pl = []; const rs = items.map((i) => i.ratio || 1.78), mixte = !portraits && n >= 4 && Math.max(...rs) / Math.min(...rs) > 1.5;
     const lots = mixte ? [] : portraits ? [items] : REPART[Math.min(n, 12)].map((c) => items.slice(idx, (idx += c)));
@@ -188,7 +217,9 @@ const Balade = (() => {
     return pl;
   }
   function lots(liste) {
-    const vert = liste.every((p) => (p.ratio || 1.78) < 0.9), max = vert ? 4 : 10; if (liste.length <= max) return [liste];
+    const rs = liste.map((p) => p.ratio || 1.78), vert = rs.every((r) => r < 0.9), mixte = !vert && Math.max(...rs) / Math.min(...rs) > 1.5;
+    // sur téléphone : un mur haut et étroit. 12 pièces en 16:9 le remplissent bien (2 colonnes), mais un mur aux formats mélangés devient illisible au-delà de 6
+    const max = DEBOUT ? (vert ? 4 : mixte ? 6 : 12) : (vert ? 4 : 10); if (liste.length <= max) return [liste];
     const n = Math.ceil(liste.length / max), t = Math.ceil(liste.length / n); return Array.from({ length: n }, (_, i) => liste.slice(i * t, (i + 1) * t)).filter((l) => l.length);
   }
 
@@ -204,10 +235,10 @@ const Balade = (() => {
         pl.forEach((q, i) => {
           const w = q.w * m, h = q.h * m * 16 / 9, x = ZONE.x + q.u * m - w / 2, y = ZONE.y + q.t * m * 16 / 9, p = q.it;
           const r = document.createElement('div'); r.className = 'reflet'; r.style.cssText = `left:${(x * 100).toFixed(3)}%;top:${((ZONE.sol + (ZONE.sol - (y + h))) * 100).toFixed(3)}%;width:${(w * 100).toFixed(3)}%;height:${(h * 100).toFixed(3)}%`;
-          const ir = document.createElement('img'); ir.alt = ''; ir.decoding = 'async'; ir.dataset.src = src(p, '-w.jpg'); r.appendChild(ir); zc.appendChild(r); imgs.push(ir);
+          const ir = document.createElement('img'); ir.alt = ''; ir.decoding = 'async'; ir.dataset.src = src(p, DEBOUT ? '-m.jpg' : '-w.jpg'); r.appendChild(ir); zc.appendChild(r); imgs.push(ir);
           const b = document.createElement('button'); b.type = 'button'; b.className = 'cadre'; b.style.cssText = `left:${(x * 100).toFixed(3)}%;top:${(y * 100).toFixed(3)}%;width:${(w * 100).toFixed(3)}%;height:${(h * 100).toFixed(3)}%;--i:${i}`;
           b.setAttribute('aria-label', `Ouvrir : ${p.title}`);
-          const im = document.createElement('img'); im.alt = ''; im.decoding = 'async'; im.dataset.src = src(p, '-w.jpg'); b.appendChild(im); imgs.push(im);
+          const im = document.createElement('img'); im.alt = ''; im.decoding = 'async'; im.dataset.src = src(p, DEBOUT ? '-m.jpg' : '-w.jpg'); b.appendChild(im); imgs.push(im);
           if (p.type === 'video') { const v = document.createElement('video'); v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'none'; v.setAttribute('aria-hidden', 'true'); v.tabIndex = -1; v.dataset.src = src(p, '-loop.mp4'); b.appendChild(v); vids.push(v); }
           b.addEventListener('click', () => Fiche.ouvre(p)); b.addEventListener('pointerenter', () => majCartel(p)); b.addEventListener('pointerleave', () => majCartel(null)); b.addEventListener('focus', () => majCartel(p)); b.addEventListener('blur', () => majCartel(null));
           zc.appendChild(b);
@@ -317,7 +348,7 @@ const Balade = (() => {
     if (filmO > 0.001 || marcheVis) {
       let img;
       if (v.videoWidth) { img = document.createElement("canvas"); img.width = v.videoWidth; img.height = v.videoHeight; try { img.getContext("2d").drawImage(v, 0, 0); } catch (e) { img = null; } }
-      if (!img) { img = document.createElement("div"); img.style.background = (film ? "url(assets/hero-poster.jpg)" : "url(assets/decor/couloir.jpg)") + " 50% 50%/cover"; }
+      if (!img) { img = document.createElement("div"); img.style.background = (film ? `url(assets/hero-poster${M}.jpg)` : `url(assets/decor/couloir${M}.jpg)`) + " 50% 50%/cover"; }
       img.className = "fantome-image"; if (!film) img.style.transform = marche.style.transform; g.appendChild(img);
     }
     stations.forEach((st) => { if (st.e > 0) { const c = st.el.cloneNode(true); c.querySelectorAll("video").forEach((x) => x.remove()); g.appendChild(c); } });
@@ -354,9 +385,10 @@ const Balade = (() => {
     bandes.find((b) => b.el.classList.contains('band-f1')).first = true; bandes.find((b) => b.el === porte).last = true;
     const zoneAiles = $('.plan-ailes', planEl);
     D.ailes.forEach((a, k) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = a.court; b.setAttribute('aria-label', `Aller à l'aile ${a.nom}`); b.addEventListener('click', () => allerA(k)); zoneAiles.appendChild(b); });
-    $('.film-poster').style.backgroundImage = "url('assets/hero-poster.jpg')"; $('.marche-poster').style.backgroundImage = "url('assets/decor/couloir.jpg')"; finEl.style.backgroundImage = "url('assets/decor/fin.jpg')";
-    let parti = false; const go = () => { if (parti) return; parti = true; charge(vFilm, 'assets/hero-scrub.mp4', OCTETS[0]).then(() => charge(vMarche, 'assets/marche-scrub.mp4', OCTETS[1])).then(() => charge(vArrivee, 'assets/arrivee-scrub.mp4', OCTETS[2])); };
-    const im = new Image(); im.onload = go; im.onerror = go; im.src = 'assets/hero-poster.jpg'; setTimeout(go, 4000);
+    $('.film-poster').style.backgroundImage = `url('assets/hero-poster${M}.jpg')`; $('.marche-poster').style.backgroundImage = `url('assets/decor/couloir${M}.jpg')`; finEl.style.backgroundImage = `url('assets/decor/fin${M}.jpg')`;
+    if (DEBOUT) { scene.classList.add('debout'); const a = $('.astuce'); if (a) a.textContent = "Touche un cadre pour l'ouvrir"; }
+    let parti = false; const go = () => { if (parti) return; parti = true; charge(vFilm, `assets/hero-scrub${M}.mp4`, (DEBOUT ? OCTETS_M : OCTETS)[0]).then(() => charge(vMarche, `assets/marche-scrub${M}.mp4`, (DEBOUT ? OCTETS_M : OCTETS)[1])).then(() => charge(vArrivee, `assets/arrivee-scrub${M}.mp4`, (DEBOUT ? OCTETS_M : OCTETS)[2])); };
+    const im = new Image(); im.onload = go; im.onerror = go; im.src = `assets/hero-poster${M}.jpg`; setTimeout(go, 4000);
     scene.addEventListener('pointermove', (e) => { if (e.pointerType !== 'mouse') return; mx = (e.clientX / innerWidth) * 2 - 1; my = (e.clientY / innerHeight) * 2 - 1; reveille(); }, { passive: true });
     scene.addEventListener('pointerleave', () => { mx = 0; my = 0; reveille(); });
     new IntersectionObserver((es) => { surEcran = es[0].isIntersecting; if (surEcran) { sale = true; reveille(); } else majPlan(shown * S_TOTAL); }).observe(section);
@@ -384,8 +416,11 @@ const Mode = (() => {
     '(prefers-reduced-motion: reduce)',
   ];
   let sansGL = false;
+  // ESSAI : avec ?couloir=1 dans l'adresse, le couloir s'ouvre aussi sur téléphone (seuls "animations réduites" et l'économie de données gardent l'entrée fixe)
+  let essai = false; try { if (/[?&]couloir=1/.test(location.search)) sessionStorage.setItem('couloir', '1'); if (/[?&]couloir=0/.test(location.search)) sessionStorage.removeItem('couloir'); essai = sessionStorage.getItem('couloir') === '1'; } catch (e) {}
+  const econome = () => !!(navigator.connection && navigator.connection.saveData);
   function applique() {
-    const fixe = sansGL || GATES.some((q) => matchMedia(q).matches);
+    const fixe = sansGL || (essai ? (matchMedia('(prefers-reduced-motion: reduce)').matches || econome()) : GATES.some((q) => matchMedia(q).matches));
     if (!fixe && Balade.pret()) { root.classList.add('js3d'); Balade.arme(); }
     else { root.classList.remove('js3d'); Balade.desarme(); }
   }
