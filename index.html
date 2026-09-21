@@ -73,10 +73,12 @@
         <p class="titre split">Entre, c'est ouvert.</p>
         <p class="sub">Tout ce que j'ai fabriqué est au mur. Tu scrolles, tu te balades.</p>
       </div>
-      <div class="chargement">
-        <div class="chargement-ligne"><p class="chargement-msg" aria-hidden="true">J'allume les appliques</p><p class="chargement-pct" aria-hidden="true"><span>0</span> %</p></div>
+      <div class="voile" role="status">
+        <svg class="voile-cle" viewBox="0 0 64 64" aria-hidden="true"><circle cx="20" cy="32" r="11" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="20" cy="32" r="3.2" fill="currentColor"/><path d="M31 32h27M49 32v9M58 32v7" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>
+        <p class="voile-titre">Un instant, je cherche la clé pour t'ouvrir.</p>
         <div class="chargement-barre" role="progressbar" aria-label="Chargement du film d'entrée" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
-        <p class="chargement-note" aria-hidden="true">Tu peux déjà scroller, le film te rattrape.</p>
+        <div class="chargement-ligne"><p class="chargement-msg" aria-hidden="true">J'allume les appliques</p><p class="chargement-pct" aria-hidden="true"><span>0</span> %</p></div>
+        <button class="voile-passer" type="button" hidden>Entrer sans attendre</button>
       </div>
       <div class="filet" aria-hidden="true"><i></i></div>
       <div class="cue" aria-hidden="true"><span>Scrolle pour entrer</span><i></i></div>

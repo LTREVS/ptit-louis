@@ -111,42 +111,71 @@ const Balade = (() => {
     // garde-fou : sur iPhone il arrive que "seeked" ne revienne jamais. Au bout de 300 ms on considère le saut comme fait, sinon le film resterait figé.
     const seek = (t) => { if (!video.duration) return; if (busy && performance.now() - tBusy > 300) busy = false; if (busy) { pending = t; return; } if (Math.abs(video.currentTime - t) < 0.012) return; busy = true; tBusy = performance.now(); video.currentTime = t; };
     video.addEventListener('seeked', () => { busy = false; if (pending !== null) { const t = pending; pending = null; seek(t); } });
-    video.addEventListener('error', () => { busy = false; pending = null; if (video.id !== 'arrivee') video.parentElement.classList.add('video-failed'); });
+    video.addEventListener('error', () => { busy = false; pending = null; if (video.id === 'hero' || video.id === 'marche') video.parentElement.classList.add('video-failed'); else if (!video.id) video.remove(); });
     return seek;
   }
   const TACTILE = matchMedia('(pointer: coarse)').matches;
-  const seekFilm = scrub(vFilm), seekMarche = scrub(vMarche), seekArrivee = scrub(vArrivee);
-  // si le téléphone a refusé le lancement automatique (mode économie d'énergie), le premier toucher déverrouille les trois films
-  if (TACTILE) addEventListener('touchstart', () => { [vFilm, vMarche, vArrivee].forEach((v) => { if (v.src && v.paused && v.readyState < 2) { const pr = v.play(); if (pr && pr.then) pr.then(() => v.pause()).catch(() => {}); } }); }, { once: false, passive: true });
-  // Chargement : une vraie jauge au centre pour le film d'entrée (avec les petites phrases maison), puis un simple filet en bas d'écran pour les plans suivants
-  const jauge = $('.chargement'), jaugeMsg = $('.chargement-msg'), jaugePct = $('.chargement-pct span'), jaugeBarre = $('.chargement-barre'), filet = $('.filet');
-  const MSGS = ["J'allume les appliques", 'Je redresse les cadres', 'Un coup de chiffon sur le laiton', 'Je cherche la bonne clé', "J'arrose les plantes", "C'est presque ouvert"];
-  let msgI = 0, msgT = null, pctVu = -1;
-  function jaugeDebut(principal) {
-    filet.style.setProperty('--p', 0); filet.classList.add('on'); if (!principal) return;
-    jauge.classList.add('on'); cue.classList.add('attend');
-    msgT = setInterval(() => { msgI = (msgI + 1) % MSGS.length; jaugeMsg.classList.add('change'); setTimeout(() => { jaugeMsg.textContent = MSGS[msgI]; jaugeMsg.classList.remove('change'); }, 270); }, 2600);
+  // Un film = une version légère, prête en une ou deux secondes, puis (sur ordinateur) la pleine qualité qui se pose par-dessus dès qu'elle est arrivée.
+  function doubleFilm(video, classe) {
+    const leger = scrub(video); let hd = null, seekHd = null, hdPret = false, hdSeul = false, voulu = 0;
+    return {
+      seek(t) { voulu = t; if (!hdSeul) leger(t); if (hdPret) seekHd(t); },
+      source() { return hdSeul && hd ? hd : video; },
+      actif(on) { if (hd) hd.classList.toggle('actif', on); },
+      creeHd() { hd = video.cloneNode(false); hd.removeAttribute('id'); hd.className = 'hd' + (classe ? ' ' + classe : ''); if (video.classList.contains('actif')) hd.classList.add('actif'); video.after(hd); seekHd = scrub(hd); return hd; },
+      hdArrive() { hd.addEventListener('seeked', () => { hdPret = true; hd.classList.add('pret'); setTimeout(() => { hdSeul = true; }, 900); sale = true; reveille(); }, { once: true }); hd.currentTime = Math.max(0.05, Math.min(voulu, (hd.duration || 1) - 0.05)); },
+    };
   }
-  function jaugeMaj(f, principal) {
-    const pc = Math.round(f * 100); if (pc === pctVu) return; pctVu = pc; filet.style.setProperty('--p', f.toFixed(3));
-    if (principal) { jauge.style.setProperty('--p', f.toFixed(3)); jaugePct.textContent = pc; jaugeBarre.setAttribute('aria-valuenow', pc); }
+  const fFilm = doubleFilm(vFilm), fMarche = doubleFilm(vMarche), fArrivee = doubleFilm(vArrivee, 'hd-arrivee');
+  const seekFilm = fFilm.seek, seekMarche = fMarche.seek, seekArrivee = fArrivee.seek;
+  // si le téléphone a refusé le lancement automatique (mode économie d'énergie), le premier toucher déverrouille les films
+  if (TACTILE) addEventListener('touchstart', () => { [vFilm, vMarche, vArrivee].forEach((v) => { if (v.src && v.paused && v.readyState < 2) { const pr = v.play(); if (pr && pr.then) pr.then(() => v.pause()).catch(() => {}); } }); }, { passive: true });
+
+  // Le voile : un filtre sombre devant la porte, et le scroll retenu le temps que la version légère du film arrive. Personne ne reste coincé :
+  // un bouton "Entrer sans attendre" apparaît au bout de 7 s, tout se déverrouille seul à 25 s, et un clic dans le menu lève le voile.
+  const voile = $('.voile'), voileTitre = $('.voile-titre'), passer = $('.voile-passer'), jaugeMsg = $('.chargement-msg'), jaugePct = $('.chargement-pct span'), jaugeBarre = $('.chargement-barre'), filet = $('.filet');
+  const MSGS = ["J'allume les appliques", 'Je redresse les cadres', 'Un coup de chiffon sur le laiton', "J'arrose les plantes", "C'est presque ouvert"];
+  const TOUCHES = [' ', 'Spacebar', 'PageDown', 'PageUp', 'End', 'Home', 'ArrowDown', 'ArrowUp'];
+  let verrou = false, voileT = [], msgI = 0, msgT = null, pctVu = -1;
+  const retient = (e) => { if (verrou) e.preventDefault(); };
+  const retientClavier = (e) => { if (verrou && TOUCHES.includes(e.key) && !/^(BUTTON|A|INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) e.preventDefault(); };
+  const retientScroll = () => { if (verrou && scrollY > 2) scrollTo(0, 0); };
+  function verrouille() {
+    if (verrou || vFilm.classList.contains('pret') || scrollY > innerHeight * 0.4 || location.hash.length > 1) return;
+    verrou = true; cue.classList.add('attend');
+    addEventListener('wheel', retient, { passive: false }); addEventListener('touchmove', retient, { passive: false }); addEventListener('keydown', retientClavier); addEventListener('scroll', retientScroll, { passive: true });
+    voileT.push(setTimeout(() => { if (verrou) voile.classList.add('on'); }, 250));      // film déjà en cache : le voile n'a même pas le temps d'apparaître
+    voileT.push(setTimeout(() => { if (verrou) passer.hidden = false; }, 7000));
+    voileT.push(setTimeout(() => deverrouille(), 25000));
+    msgT = setInterval(() => { msgI = (msgI + 1) % MSGS.length; jaugeMsg.classList.add('change'); setTimeout(() => { jaugeMsg.textContent = MSGS[msgI]; jaugeMsg.classList.remove('change'); }, 270); }, 2400);
   }
-  function jaugeFin(principal, ok) {
-    filet.classList.remove('on'); pctVu = -1; if (!principal) return;
-    clearInterval(msgT); jaugeMsg.classList.remove('change'); jaugeMsg.textContent = ok ? "C'est ouvert." : 'Le film boude, le couloir reste ouvert.';
-    setTimeout(() => { jauge.classList.remove('on'); cue.classList.remove('attend'); }, ok ? 900 : 2400);
+  function deverrouille() {
+    if (!verrou) return; verrou = false; voileT.forEach(clearTimeout); voileT = []; clearInterval(msgT);
+    removeEventListener('wheel', retient); removeEventListener('touchmove', retient); removeEventListener('keydown', retientClavier); removeEventListener('scroll', retientScroll);
+    voile.classList.remove('on'); cue.classList.remove('attend'); t0 = performance.now(); sale = true; reveille();   // le titre s'assemble au moment où le voile se lève
   }
-  async function charge(video, url, octets) {
+  passer.addEventListener('click', deverrouille);
+  document.addEventListener('click', (e) => { if (verrou && e.target.closest('.nav a, .nav button, a[href^="#"]')) deverrouille(); }, true);
+  function jaugeDebut(principal, discret) { if (discret) return; filet.style.setProperty('--p', 0); filet.classList.add('on'); }
+  function jaugeMaj(f, principal, discret) {
+    if (discret) return; const pc = Math.round(f * 100); if (pc === pctVu) return; pctVu = pc; filet.style.setProperty('--p', f.toFixed(3));
+    if (principal) { voile.style.setProperty('--p', f.toFixed(3)); jaugePct.textContent = pc; jaugeBarre.setAttribute('aria-valuenow', pc); }
+  }
+  function jaugeFin(principal, ok, discret) {
+    if (discret) return; filet.classList.remove('on'); pctVu = -1; if (!principal) return;
+    if (ok && verrou) { clearInterval(msgT); voileTitre.textContent = "C'est ouvert."; jaugeMsg.textContent = 'Entre.'; setTimeout(deverrouille, 650); } else deverrouille();
+  }
+  async function charge(video, url, octets, o = {}) {
     const ctrl = new AbortController(); let garde = setTimeout(() => ctrl.abort(), 25000);
     try {
-      const r = await fetch(url, { signal: ctrl.signal, priority: "low" }); if (!r.ok) throw 0;
+      const r = await fetch(url, { signal: ctrl.signal, priority: o.principal ? "high" : "low" }); if (!r.ok) throw 0;
       const total = Number(r.headers.get("Content-Length")) || octets; const lecteur = r.body.getReader(); const morceaux = []; let recu = 0, dernier = 0;
-      const principal = video === vFilm; jaugeDebut(principal);
+      const principal = !!o.principal, discret = !!o.hd; jaugeDebut(principal, discret);
       for (;;) {
         const { done, value } = await lecteur.read(); if (done) break;
         clearTimeout(garde); garde = setTimeout(() => ctrl.abort(), 25000);
         morceaux.push(value); recu += value.length; const f = Math.min(1, recu / total), now = performance.now();
-        if (now - dernier > 100 || f === 1) { dernier = now; jaugeMaj(f, principal); }
+        if (now - dernier > 100 || f === 1) { dernier = now; jaugeMaj(f, principal, discret); }
       }
       clearTimeout(garde);
       video.muted = true; video.playsInline = true; video.setAttribute('webkit-playsinline', '');
@@ -157,8 +186,9 @@ const Balade = (() => {
         // Safari sur iPhone ne décode aucune image tant que la vidéo n'a pas été lancée une fois : on la lance muette, puis pause aussitôt
         if (TACTILE) { const pr = video.play(); if (pr && pr.then) pr.then(() => { video.pause(); f(); }).catch(() => {}); setTimeout(f, 7000); }
       });
-      video.parentElement.classList.add("video-ready"); video.classList.add("pret"); jaugeFin(principal, true); sale = true; reveille();
-    } catch (e) { clearTimeout(garde); jaugeFin(video === vFilm, false); if (video.id !== "arrivee") video.parentElement.classList.add("video-failed"); }
+      if (o.hd) { o.hd.hdArrive(); return true; }
+      video.parentElement.classList.add("video-ready"); video.classList.add("pret"); jaugeFin(principal, true, false); sale = true; reveille(); return true;
+    } catch (e) { clearTimeout(garde); jaugeFin(!!o.principal, false, !!o.hd); if (o.hd) { video.remove(); return false; } if (video.id !== "arrivee") video.parentElement.classList.add("video-failed"); return false; }
   }
 
   /* --- accrochage de salon : rangées justifiées de hauteurs différentes, décalées, qui remplissent le mur --- */
@@ -295,6 +325,7 @@ const Balade = (() => {
   function tick(now) {
     const dt = Math.min(100, now - (lastTick || now)); lastTick = now; const kk = (r) => 1 - Math.pow(1 - r, dt / 16.667);
     shown += (target - shown) * kk(0.10); mxC += (mx - mxC) * kk(0.06); myC += (my - myC) * kk(0.06);
+    if (verrou) t0 = now;
     loadK = clamp((now - t0) / 1400, 0, 1); loadK = loadK * loadK * (3 - 2 * loadK);
     const s = shown * S_TOTAL;
 
@@ -302,7 +333,7 @@ const Balade = (() => {
     const fo = 1 - smoothstep(s, F - 10, F + 12);
     if (Math.abs(fo - filmO) > 0.004) { filmEl.style.opacity = fo.toFixed(3); filmEl.style.visibility = fo > 0.001 ? 'visible' : 'hidden'; filmO = fo; }
     if (fo > 0) { seekFilm(clamp(s / F, 0, 1) * ((vFilm.duration || 8) - 0.04)); majEnseigne(vFilm.classList.contains('pret') ? clamp(s / F, 0, 1) : 0); }
-    const cu = s < 8; if (cu !== cueOn) { cue.classList.toggle('parti', !cu); jauge.classList.toggle('discret', !cu); cueOn = cu; }
+    const cu = s < 8; if (cu !== cueOn) { cue.classList.toggle('parti', !cu); cueOn = cu; }
 
     // 2) les murs : un fondu doux, un léger pas vers le mur, jamais de glissement d'un bord à l'autre
     let somme = 0, signe = 0, face = false;
@@ -324,7 +355,7 @@ const Balade = (() => {
     if (vis) {
       const c = `${signe.toFixed(3)}|${somme.toFixed(3)}`; if (c !== mCle) { marche.style.transform = somme < 0.001 ? 'none' : `translate3d(${(-signe * 3).toFixed(2)}vw,0,0) scale(${(1 + 0.075 * Math.min(1, somme)).toFixed(4)})`; mCle = c; }
       const tr = trous.find((g) => s >= g[0] && s <= g[1]); const dernier = tr === trous[trous.length - 1] && vArrivee.classList.contains('pret');
-      if (dernier !== arriveeOn) { vArrivee.classList.toggle('actif', dernier); arriveeOn = dernier; }
+      if (dernier !== arriveeOn) { vArrivee.classList.toggle('actif', dernier); fArrivee.actif(dernier); arriveeOn = dernier; }
       if (tr && dernier) seekArrivee(clamp((s - tr[0]) / (sFin[1] - tr[0]), 0, 1) * (vArrivee.duration - 0.05));
       else if (tr && vMarche.duration) seekMarche(clamp((s - tr[0]) / (tr[1] - tr[0]), 0, 1) * (vMarche.duration - 0.05));
     }
@@ -344,7 +375,7 @@ const Balade = (() => {
   // Fondu enchaîné : on fige exactement ce qui est à l'écran, on place la page à destination en dessous, puis on dissout l'ancienne vue dans la nouvelle.
   function fantome(dehors) {
     const g = document.createElement("div"); g.className = "fantome" + (dehors ? " dehors" : ""); g.setAttribute("aria-hidden", "true");
-    const film = filmO > 0.5, v = film ? vFilm : vMarche;
+    const film = filmO > 0.5, v = film ? fFilm.source() : fMarche.source();
     if (filmO > 0.001 || marcheVis) {
       let img;
       if (v.videoWidth) { img = document.createElement("canvas"); img.width = v.videoWidth; img.height = v.videoHeight; try { img.getContext("2d").drawImage(v, 0, 0); } catch (e) { img = null; } }
@@ -387,7 +418,10 @@ const Balade = (() => {
     D.ailes.forEach((a, k) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = a.court; b.setAttribute('aria-label', `Aller à l'aile ${a.nom}`); b.addEventListener('click', () => allerA(k)); zoneAiles.appendChild(b); });
     $('.film-poster').style.backgroundImage = `url('assets/hero-poster${M}.jpg')`; $('.marche-poster').style.backgroundImage = `url('assets/decor/couloir${M}.jpg')`; finEl.style.backgroundImage = `url('assets/decor/fin${M}.jpg')`;
     if (DEBOUT) { scene.classList.add('debout'); const a = $('.astuce'); if (a) a.textContent = "Touche un cadre pour l'ouvrir"; }
-    let parti = false; const go = () => { if (parti) return; parti = true; charge(vFilm, `assets/hero-scrub${M}.mp4`, (DEBOUT ? OCTETS_M : OCTETS)[0]).then(() => charge(vMarche, `assets/marche-scrub${M}.mp4`, (DEBOUT ? OCTETS_M : OCTETS)[1])).then(() => charge(vArrivee, `assets/arrivee-scrub${M}.mp4`, (DEBOUT ? OCTETS_M : OCTETS)[2])); };
+    const OCTETS_L = [2227405, 2237166, 2332982], leger = DEBOUT ? '-m' : '-l', OL = DEBOUT ? OCTETS_M : OCTETS_L, econome = !!(navigator.connection && navigator.connection.saveData);
+    let parti = false; const go = () => { if (parti) return; parti = true;
+      charge(vFilm, `assets/hero-scrub${leger}.mp4`, OL[0], { principal: true }).then(() => charge(vMarche, `assets/marche-scrub${leger}.mp4`, OL[1])).then(() => charge(vArrivee, `assets/arrivee-scrub${leger}.mp4`, OL[2]))
+        .then(() => { if (DEBOUT || econome) return null; return charge(fFilm.creeHd(), 'assets/hero-scrub.mp4', OCTETS[0], { hd: fFilm }).then(() => charge(fMarche.creeHd(), 'assets/marche-scrub.mp4', OCTETS[1], { hd: fMarche })).then(() => charge(fArrivee.creeHd(), 'assets/arrivee-scrub.mp4', OCTETS[2], { hd: fArrivee })); }); };
     const im = new Image(); im.onload = go; im.onerror = go; im.src = `assets/hero-poster${M}.jpg`; setTimeout(go, 4000);
     scene.addEventListener('pointermove', (e) => { if (e.pointerType !== 'mouse') return; mx = (e.clientX / innerWidth) * 2 - 1; my = (e.clientY / innerHeight) * 2 - 1; reveille(); }, { passive: true });
     scene.addEventListener('pointerleave', () => { mx = 0; my = 0; reveille(); });
@@ -398,8 +432,8 @@ const Balade = (() => {
 
   return {
     pret() { return initOnce(); },
-    arme() { if (arme) return; arme = true; bandes.forEach((b) => { b.op = -1; b.k = -1; }); addEventListener('scroll', onScroll, { passive: true }); mesure(); onScroll(); reveille(); },
-    desarme() { if (!arme) return; arme = false; removeEventListener('scroll', onScroll); if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; } stations.forEach((st) => st.vids.forEach((v) => v.pause())); },
+    arme() { if (arme) return; arme = true; verrouille(); bandes.forEach((b) => { b.op = -1; b.k = -1; }); addEventListener('scroll', onScroll, { passive: true }); mesure(); onScroll(); reveille(); },
+    desarme() { if (!arme) return; arme = false; deverrouille(); removeEventListener('scroll', onScroll); if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; } stations.forEach((st) => st.vids.forEach((v) => v.pause())); },
     allerA, recale, fondreVers, epingle, enMarche: () => arme,
     debug: () => ({ shown: +shown.toFixed(4), s: Math.round(shown * S_TOTAL), S_TOTAL, F, murs: stations.map((st) => `${D.ailes[st.k].id}:${st.zc.querySelectorAll('.cadre').length}${st.cote < 0 ? 'G' : 'D'}@${Math.round(st.p0)}`), tFilm: +vFilm.currentTime.toFixed(2), tMarche: +vMarche.currentTime.toFixed(2) }),
   };
