@@ -121,12 +121,14 @@ const Balade = (() => {
     return {
       seek(t) { voulu = t; if (!hdSeul) leger(t); if (hdPret) seekHd(t); },
       source() { return hdSeul && hd ? hd : video; },
+      net() { return hdPret; },
       actif(on) { if (hd) hd.classList.toggle('actif', on); },
       creeHd() { hd = video.cloneNode(false); hd.removeAttribute('id'); hd.className = 'hd' + (classe ? ' ' + classe : ''); if (video.classList.contains('actif')) hd.classList.add('actif'); video.after(hd); seekHd = scrub(hd); return hd; },
       hdArrive() { hd.addEventListener('seeked', () => { hdPret = true; hd.classList.add('pret'); setTimeout(() => { hdSeul = true; }, 900); sale = true; reveille(); }, { once: true }); hd.currentTime = Math.max(0.05, Math.min(voulu, (hd.duration || 1) - 0.05)); },
     };
   }
   const fFilm = doubleFilm(vFilm), fMarche = doubleFilm(vMarche), fArrivee = doubleFilm(vArrivee, 'hd-arrivee');
+  const filmNet = $('.film-net'); let netOn = null;
   const seekFilm = fFilm.seek, seekMarche = fMarche.seek, seekArrivee = fArrivee.seek;
   // si le téléphone a refusé le lancement automatique (mode économie d'énergie), le premier toucher déverrouille les films
   if (TACTILE) addEventListener('touchstart', () => { [vFilm, vMarche, vArrivee].forEach((v) => { if (v.src && v.paused && v.readyState < 2) { const pr = v.play(); if (pr && pr.then) pr.then(() => v.pause()).catch(() => {}); } }); }, { passive: true });
@@ -332,6 +334,7 @@ const Balade = (() => {
     // 1) le film de la porte, puis un fondu très court vers la marche (mêmes images des deux côtés)
     const fo = 1 - smoothstep(s, F - 10, F + 12);
     if (Math.abs(fo - filmO) > 0.004) { filmEl.style.opacity = fo.toFixed(3); filmEl.style.visibility = fo > 0.001 ? 'visible' : 'hidden'; filmO = fo; }
+    { const n = !DEBOUT && s < 1.2 && !fFilm.net(); if (n !== netOn) { filmNet.classList.toggle('on', n); netOn = n; } }
     if (fo > 0) { seekFilm(clamp(s / F, 0, 1) * ((vFilm.duration || 8) - 0.04)); majEnseigne(vFilm.classList.contains('pret') ? clamp(s / F, 0, 1) : 0); }
     const cu = s < 8; if (cu !== cueOn) { cue.classList.toggle('parti', !cu); cueOn = cu; }
 
@@ -416,12 +419,16 @@ const Balade = (() => {
     bandes.find((b) => b.el.classList.contains('band-f1')).first = true; bandes.find((b) => b.el === porte).last = true;
     const zoneAiles = $('.plan-ailes', planEl);
     D.ailes.forEach((a, k) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = a.court; b.setAttribute('aria-label', `Aller à l'aile ${a.nom}`); b.addEventListener('click', () => allerA(k)); zoneAiles.appendChild(b); });
-    $('.film-poster').style.backgroundImage = `url('assets/hero-poster${M}.jpg')`; $('.marche-poster').style.backgroundImage = `url('assets/decor/couloir${M}.jpg')`; finEl.style.backgroundImage = `url('assets/decor/fin${M}.jpg')`;
+    $('.film-poster').style.backgroundImage = `url('assets/hero-poster${M}.jpg')`; filmNet.style.backgroundImage = `url('assets/hero-poster${M}.jpg')`; $('.marche-poster').style.backgroundImage = `url('assets/decor/couloir${M}.jpg')`; finEl.style.backgroundImage = `url('assets/decor/fin${M}.jpg')`;
     if (DEBOUT) { scene.classList.add('debout'); const a = $('.astuce'); if (a) a.textContent = "Touche un cadre pour l'ouvrir"; }
-    const OCTETS_L = [2227405, 2237166, 2332982], leger = DEBOUT ? '-m' : '-l', OL = DEBOUT ? OCTETS_M : OCTETS_L, econome = !!(navigator.connection && navigator.connection.saveData);
+    const OCTETS_L = [4377395, 4397721, 2332982], leger = DEBOUT ? '-m' : '-l', OL = DEBOUT ? OCTETS_M : OCTETS_L, econome = !!(navigator.connection && navigator.connection.saveData);
     let parti = false; const go = () => { if (parti) return; parti = true;
-      charge(vFilm, `assets/hero-scrub${leger}.mp4`, OL[0], { principal: true }).then(() => charge(vMarche, `assets/marche-scrub${leger}.mp4`, OL[1])).then(() => charge(vArrivee, `assets/arrivee-scrub${leger}.mp4`, OL[2]))
-        .then(() => { if (DEBOUT || econome) return null; return charge(fFilm.creeHd(), 'assets/hero-scrub.mp4', OCTETS[0], { hd: fFilm }).then(() => charge(fMarche.creeHd(), 'assets/marche-scrub.mp4', OCTETS[1], { hd: fMarche })).then(() => charge(fArrivee.creeHd(), 'assets/arrivee-scrub.mp4', OCTETS[2], { hd: fArrivee })); }); };
+      // Ordre pensé pour la première impression : la porte en version légère (le voile se lève), puis EN MÊME TEMPS la porte en pleine qualité et la marche légère ;
+      // l'arrivée, qu'on ne voit qu'au bout du couloir, passe après, puis les pleines qualités de la marche et de l'arrivée.
+      const hd = (f, url, n) => (DEBOUT || econome ? null : charge(f.creeHd(), url, OCTETS[n], { hd: f }));
+      charge(vFilm, `assets/hero-scrub${leger}.mp4`, OL[0], { principal: true })
+        .then(() => Promise.all([hd(fFilm, 'assets/hero-scrub.mp4', 0), charge(vMarche, `assets/marche-scrub${leger}.mp4`, OL[1])]))
+        .then(() => charge(vArrivee, `assets/arrivee-scrub${leger}.mp4`, OL[2])).then(() => hd(fMarche, 'assets/marche-scrub.mp4', 1)).then(() => hd(fArrivee, 'assets/arrivee-scrub.mp4', 2)); };
     // le voile couvre la scène pendant le chargement : inutile d'attendre l'image de la porte pour lancer le film léger, les deux partent ensemble
     const im = new Image(); im.src = `assets/hero-poster${M}.jpg`; go();
     scene.addEventListener('pointermove', (e) => { if (e.pointerType !== 'mouse') return; mx = (e.clientX / innerWidth) * 2 - 1; my = (e.clientY / innerHeight) * 2 - 1; reveille(); }, { passive: true });

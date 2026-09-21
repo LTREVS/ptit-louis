@@ -96,6 +96,9 @@ html.js3d .balade{display:block}
 .film-couche.video-ready #hero{opacity:1}
 .film-couche.video-failed #hero{display:none}
 /* la pleine qualité arrive après la version légère et se pose par-dessus, en fondu */
+/* au repos, tant que la pleine qualité n'est pas là, on montre l'image fixe nette de la porte plutôt que la version légère : le visage de Louis est la première chose qu'on voit */
+.film-net{position:absolute;inset:0;background-size:cover;background-position:50% 50%;opacity:0;transition:opacity .35s var(--e1);pointer-events:none}
+.film-net.on{opacity:1}
 video.hd{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:translateZ(0);transition:opacity .7s var(--e1);pointer-events:none}
 video.hd.pret{opacity:1}
 video.hd.hd-arrivee.pret{opacity:0}
