@@ -113,6 +113,7 @@ video.hd.hd-arrivee.pret.actif{opacity:1}
 .band .sub{margin-top:18px;color:var(--text-primary);font-size:clamp(1rem,1.25vw,1.2rem);max-width:36ch;--ks:clamp(0,(var(--k) - .55)*3.2,1);opacity:var(--ks);transform:translateY(calc((1 - var(--ks))*14px))}
 .band .cta{margin-top:26px;--kb:clamp(0,(var(--k) - .74)*4.5,1);opacity:var(--kb);transform:translateY(calc((1 - var(--kb))*14px))}
 .band .btn{text-shadow:none}
+.band .note{margin-top:16px;font:400 .8125rem/1.4 var(--mono);letter-spacing:.04em;color:var(--text-secondary);--kn:clamp(0,(var(--k) - .82)*6,1);opacity:var(--kn);transform:translateY(calc((1 - var(--kn))*10px))}
 .band-f1{left:clamp(24px,5.5vw,96px);top:50%;transform:translateY(-46%);width:min(37vw,640px);z-index:6}
 .band-f1 h1{max-width:none;font-size:clamp(1.8rem,3.7vw,3.7rem)}
 .ligne{display:block;white-space:nowrap}
