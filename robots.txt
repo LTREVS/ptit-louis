@@ -1,0 +1,6 @@
+# P'tit Louis : tout est ouvert, comme la porte.
+User-agent: *
+Allow: /
+Disallow: /404.html
+
+Sitemap: https://louisclement.site/sitemap.xml
