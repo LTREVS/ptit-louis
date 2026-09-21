@@ -110,9 +110,24 @@ html.js3d .balade{display:block}
 .ligne{display:block;white-space:nowrap}
 .band-f2{left:clamp(24px,5.5vw,96px);top:50%;transform:translateY(-46%);width:min(32vw,520px);z-index:6}   /* à gauche : Louis occupe la droite de l'image */
 .cue{z-index:6}
-.ring{position:absolute;right:clamp(16px,3vw,40px);top:calc(var(--navh) + 12px);z-index:7;width:30px;height:30px;color:var(--laiton);transform:rotate(-90deg);opacity:0;transition:opacity .6s var(--e1);pointer-events:none}
-.ring.on{opacity:.9}
-.ring circle{transition:stroke-dashoffset .25s linear}
+/* Chargement du film d'entrée : une vraie jauge au centre, avec les petites phrases de Louis. Les plans suivants n'ont qu'un filet en bas d'écran. */
+.chargement{position:absolute;left:50%;bottom:clamp(76px,13vh,140px);z-index:7;width:min(580px,86vw);transform:translate(-50%,14px);display:grid;gap:14px;padding:24px 30px 22px;border:1px solid rgba(217,179,122,.3);border-radius:18px;background:rgba(18,11,7,.78);box-shadow:0 18px 50px rgba(0,0,0,.45);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .6s var(--e1),transform .6s var(--e1),visibility 0s .6s}
+.chargement.on{opacity:1;visibility:visible;transform:translate(-50%,0);transition:opacity .6s var(--e1),transform .6s var(--e1)}
+.chargement.on.discret{opacity:0;transform:translate(-50%,10px)}
+.chargement-ligne{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.chargement-msg{font:700 clamp(1.15rem,1.5vw,1.4rem)/1.15 var(--titre);letter-spacing:-.01em;color:var(--text-primary);transition:opacity .26s var(--e1),transform .26s var(--e1)}
+.chargement-msg.change{opacity:0;transform:translateY(6px)}
+.chargement-pct{font:500 1rem/1 var(--mono);letter-spacing:.06em;color:var(--laiton);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chargement-barre{position:relative;height:12px;border-radius:999px;background:rgba(243,235,221,.13);overflow:hidden}
+.chargement-barre i{position:absolute;left:0;top:0;bottom:0;width:calc(var(--p,0)*100%);min-width:8px;border-radius:inherit;background:linear-gradient(90deg,#A8531A,#E8833A 55%,#F8C98A);box-shadow:0 0 14px rgba(232,131,58,.55);overflow:hidden;transition:width .3s linear}
+.chargement-barre i::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 25%,rgba(255,240,215,.7) 50%,transparent 75%);transform:translateX(-100%);animation:reflet 1.7s var(--e2) infinite}
+@keyframes reflet{to{transform:translateX(100%)}}
+.chargement-note{font:400 .75rem/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text-secondary);text-align:center}
+.cue.attend{opacity:0}
+.filet{position:absolute;left:0;right:0;bottom:0;z-index:8;height:3px;opacity:0;transition:opacity .5s var(--e1);pointer-events:none}
+.filet.on{opacity:1}
+.chargement.on:not(.discret) ~ .filet{opacity:0}
+.filet i{display:block;height:100%;width:calc(var(--p,0)*100%);background:linear-gradient(90deg,#A8531A,#E8833A,#F8C98A);box-shadow:0 0 12px rgba(232,131,58,.7);transition:width .3s linear}
 .band-porte{left:50%;bottom:clamp(28px,6vh,64px);transform:translateX(-50%);width:min(70vw,820px);z-index:6;text-align:center}
 .band-porte .titre{max-width:none;font-size:clamp(1.9rem,3.8vw,3.4rem)}
 .band-porte .sub{margin-inline:auto;max-width:none;text-wrap:balance}

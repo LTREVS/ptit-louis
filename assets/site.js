@@ -110,24 +110,41 @@ const Balade = (() => {
     return seek;
   }
   const seekFilm = scrub(vFilm), seekMarche = scrub(vMarche), seekArrivee = scrub(vArrivee);
-  const ring = $(".ring"); let ringO = -1;
+  // Chargement : une vraie jauge au centre pour le film d'entrée (avec les petites phrases maison), puis un simple filet en bas d'écran pour les plans suivants
+  const jauge = $('.chargement'), jaugeMsg = $('.chargement-msg'), jaugePct = $('.chargement-pct span'), jaugeBarre = $('.chargement-barre'), filet = $('.filet');
+  const MSGS = ["J'allume les appliques", 'Je redresse les cadres', 'Un coup de chiffon sur le laiton', 'Je cherche la bonne clé', "J'arrose les plantes", "C'est presque ouvert"];
+  let msgI = 0, msgT = null, pctVu = -1;
+  function jaugeDebut(principal) {
+    filet.style.setProperty('--p', 0); filet.classList.add('on'); if (!principal) return;
+    jauge.classList.add('on'); cue.classList.add('attend');
+    msgT = setInterval(() => { msgI = (msgI + 1) % MSGS.length; jaugeMsg.classList.add('change'); setTimeout(() => { jaugeMsg.textContent = MSGS[msgI]; jaugeMsg.classList.remove('change'); }, 270); }, 2600);
+  }
+  function jaugeMaj(f, principal) {
+    const pc = Math.round(f * 100); if (pc === pctVu) return; pctVu = pc; filet.style.setProperty('--p', f.toFixed(3));
+    if (principal) { jauge.style.setProperty('--p', f.toFixed(3)); jaugePct.textContent = pc; jaugeBarre.setAttribute('aria-valuenow', pc); }
+  }
+  function jaugeFin(principal, ok) {
+    filet.classList.remove('on'); pctVu = -1; if (!principal) return;
+    clearInterval(msgT); jaugeMsg.classList.remove('change'); jaugeMsg.textContent = ok ? "C'est ouvert." : 'Le film boude, le couloir reste ouvert.';
+    setTimeout(() => { jauge.classList.remove('on'); cue.classList.remove('attend'); }, ok ? 900 : 2400);
+  }
   async function charge(video, url, octets) {
     const ctrl = new AbortController(); let garde = setTimeout(() => ctrl.abort(), 25000);
     try {
       const r = await fetch(url, { signal: ctrl.signal, priority: "low" }); if (!r.ok) throw 0;
       const total = Number(r.headers.get("Content-Length")) || octets; const lecteur = r.body.getReader(); const morceaux = []; let recu = 0, dernier = 0;
-      ring.classList.add("on");
+      const principal = video === vFilm; jaugeDebut(principal);
       for (;;) {
         const { done, value } = await lecteur.read(); if (done) break;
         clearTimeout(garde); garde = setTimeout(() => ctrl.abort(), 25000);
         morceaux.push(value); recu += value.length; const f = Math.min(1, recu / total), now = performance.now();
-        if (now - dernier > 100 || f === 1) { dernier = now; const o = Math.round(126 * (1 - f)); if (o !== ringO) { ring.style.setProperty("--ld", o); ringO = o; } }
+        if (now - dernier > 100 || f === 1) { dernier = now; jaugeMaj(f, principal); }
       }
-      clearTimeout(garde); ring.classList.remove("on");
+      clearTimeout(garde);
       video.src = URL.createObjectURL(new Blob(morceaux, { type: "video/mp4" })); video.load();
       await new Promise((ok) => video.addEventListener("canplay", ok, { once: true }));
-      video.parentElement.classList.add("video-ready"); video.classList.add("pret"); sale = true; reveille();
-    } catch (e) { clearTimeout(garde); ring.classList.remove("on"); if (video.id !== "arrivee") video.parentElement.classList.add("video-failed"); }
+      video.parentElement.classList.add("video-ready"); video.classList.add("pret"); jaugeFin(principal, true); sale = true; reveille();
+    } catch (e) { clearTimeout(garde); jaugeFin(video === vFilm, false); if (video.id !== "arrivee") video.parentElement.classList.add("video-failed"); }
   }
 
   /* --- accrochage de salon : rangées justifiées de hauteurs différentes, décalées, qui remplissent le mur --- */
@@ -254,7 +271,7 @@ const Balade = (() => {
     const fo = 1 - smoothstep(s, F - 10, F + 12);
     if (Math.abs(fo - filmO) > 0.004) { filmEl.style.opacity = fo.toFixed(3); filmEl.style.visibility = fo > 0.001 ? 'visible' : 'hidden'; filmO = fo; }
     if (fo > 0) { seekFilm(clamp(s / F, 0, 1) * ((vFilm.duration || 8) - 0.04)); majEnseigne(vFilm.classList.contains('pret') ? clamp(s / F, 0, 1) : 0); }
-    const cu = s < 8; if (cu !== cueOn) { cue.classList.toggle('parti', !cu); cueOn = cu; }
+    const cu = s < 8; if (cu !== cueOn) { cue.classList.toggle('parti', !cu); jauge.classList.toggle('discret', !cu); cueOn = cu; }
 
     // 2) les murs : un fondu doux, un léger pas vers le mur, jamais de glissement d'un bord à l'autre
     let somme = 0, signe = 0, face = false;
