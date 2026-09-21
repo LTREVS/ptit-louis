@@ -422,7 +422,8 @@ const Balade = (() => {
     let parti = false; const go = () => { if (parti) return; parti = true;
       charge(vFilm, `assets/hero-scrub${leger}.mp4`, OL[0], { principal: true }).then(() => charge(vMarche, `assets/marche-scrub${leger}.mp4`, OL[1])).then(() => charge(vArrivee, `assets/arrivee-scrub${leger}.mp4`, OL[2]))
         .then(() => { if (DEBOUT || econome) return null; return charge(fFilm.creeHd(), 'assets/hero-scrub.mp4', OCTETS[0], { hd: fFilm }).then(() => charge(fMarche.creeHd(), 'assets/marche-scrub.mp4', OCTETS[1], { hd: fMarche })).then(() => charge(fArrivee.creeHd(), 'assets/arrivee-scrub.mp4', OCTETS[2], { hd: fArrivee })); }); };
-    const im = new Image(); im.onload = go; im.onerror = go; im.src = `assets/hero-poster${M}.jpg`; setTimeout(go, 4000);
+    // le voile couvre la scène pendant le chargement : inutile d'attendre l'image de la porte pour lancer le film léger, les deux partent ensemble
+    const im = new Image(); im.src = `assets/hero-poster${M}.jpg`; go();
     scene.addEventListener('pointermove', (e) => { if (e.pointerType !== 'mouse') return; mx = (e.clientX / innerWidth) * 2 - 1; my = (e.clientY / innerHeight) * 2 - 1; reveille(); }, { passive: true });
     scene.addEventListener('pointerleave', () => { mx = 0; my = 0; reveille(); });
     new IntersectionObserver((es) => { surEcran = es[0].isIntersecting; if (surEcran) { sale = true; reveille(); } else majPlan(shown * S_TOTAL); }).observe(section);
