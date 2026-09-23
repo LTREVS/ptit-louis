@@ -95,8 +95,8 @@ const Balade = (() => {
   const REPART = { 1: [1], 2: [2], 3: [1, 2], 4: [2, 2], 5: [2, 3], 6: [2, 2, 2], 7: [2, 3, 2], 8: [3, 2, 3], 9: [3, 2, 4], 10: [3, 3, 4], 11: [4, 3, 4], 12: [4, 4, 4] };
   // Téléphone tenu droit : le plan du mur (16:9) déborde largement de l'écran, on n'en voit que la bande centrale. La zone d'accrochage s'y adapte,
   // les films et les images passent en version verticale légère (suffixe -m), et l'accrochage se fait sur deux colonnes.
-  const DEBOUT = innerHeight > innerWidth * 1.05, VISIBLE = Math.min(1, (innerWidth / innerHeight) / 1.849), M = DEBOUT ? '-m' : '';
-  const ZONE = DEBOUT ? { x: 0.5, y: 0.425, w: 0.9 * VISIBLE, h: 0.6, sol: 0.772 } : { x: 0.5, y: 0.435, w: 0.548, h: 0.595, sol: 0.772 };
+  let DEBOUT = false, M = '', ZONE = { x: 0.5, y: 0.435, w: 0.548, h: 0.595, sol: 0.772 };   // fixés dans initOnce, quand le couloir se construit
+  function litOrientation() { DEBOUT = innerHeight > innerWidth * 1.05; M = DEBOUT ? '-m' : ''; if (DEBOUT) ZONE = { x: 0.5, y: 0.425, w: 0.9 * Math.min(1, (innerWidth / innerHeight) / 1.849), h: 0.6, sol: 0.772 }; }
   const OCTETS_M = [2534000, 2066000, 2097000];
   // position de la porte dans le film (temps s, centre x, haut y, largeur), en fractions de l'image. À re-mesurer si le film change.
   const PORTE = [[0, .494, .112, .404], [0.5, .494, .096, .417], [1.0, .495, .078, .433], [1.5, .496, .052, .456], [2.0, .496, .013, .487], [2.5, .497, -.03, .52]];
@@ -404,7 +404,7 @@ const Balade = (() => {
   function mesure() { planLarg = planTrace.clientWidth; planX = -1; ensC = ''; sale = true; reveille(); }
 
   function initOnce() {
-    if (init) return true; init = true; t0 = performance.now();
+    if (init) return true; init = true; t0 = performance.now(); litOrientation();
     construitMurs(); construitPiste(); section.style.height = `${Math.round(S_TOTAL + 100)}vh`;
     // les deux bandes du film : leurs plages sont écrites en fraction du film, on les ramène à la piste entière
     $$('.band-film', section).forEach((b) => { b.dataset.a = ((+b.dataset.a * F) / S_TOTAL).toFixed(5); b.dataset.b = ((+b.dataset.b * F) / S_TOTAL).toFixed(5); });
@@ -450,19 +450,20 @@ const Balade = (() => {
 /* ------------------------------------------------------------------ */
 /* MODE : les cinq portes du héros fixe, tenues en direct               */
 const Mode = (() => {
+  // L'entrée fixe (image + galeries) ne sert plus que là où le couloir n'a pas sa place. Sur téléphone tenu droit, c'est le couloir.
   const GATES = [
-    '(max-width: 720px)',
-    '(orientation: portrait) and (max-width: 1024px)',
-    '(orientation: portrait) and (pointer: coarse)',
-    '(orientation: landscape) and (pointer: coarse) and (max-height: 560px)',
-    '(prefers-reduced-motion: reduce)',
+    '(prefers-reduced-motion: reduce)',                                          // le visiteur a demandé moins d'animations
+    '(max-width: 720px) and (pointer: fine)',                                   // fenêtre d'ordinateur trop étroite
+    '(orientation: landscape) and (pointer: coarse) and (max-height: 560px)',   // téléphone tenu en travers : pas la place
+    '(orientation: portrait) and (min-width: 721px) and (max-width: 1024px)',   // tablette tenue droite : pas encore testée
   ];
   let sansGL = false;
-  // ESSAI : avec ?couloir=1 dans l'adresse, le couloir s'ouvre aussi sur téléphone (seuls "animations réduites" et l'économie de données gardent l'entrée fixe)
-  let essai = false; try { if (/[?&]couloir=1/.test(location.search)) sessionStorage.setItem('couloir', '1'); if (/[?&]couloir=0/.test(location.search)) sessionStorage.removeItem('couloir'); essai = sessionStorage.getItem('couloir') === '1'; } catch (e) {}
+  // Dépannage : ?couloir=0 dans l'adresse force l'entrée fixe, ?couloir=1 force le couloir (tablette comprise). Retenu le temps de l'onglet.
+  let force = null; try { const m = location.search.match(/[?&]couloir=([01])/); if (m) sessionStorage.setItem('couloir', m[1]); force = sessionStorage.getItem('couloir'); } catch (e) {}
   const econome = () => !!(navigator.connection && navigator.connection.saveData);
   function applique() {
-    const fixe = sansGL || (essai ? (matchMedia('(prefers-reduced-motion: reduce)').matches || econome()) : GATES.some((q) => matchMedia(q).matches));
+    const calme = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const fixe = sansGL || calme || econome() || force === '0' || (force !== '1' && GATES.some((q) => matchMedia(q).matches));
     if (!fixe && Balade.pret()) { root.classList.add('js3d'); Balade.arme(); }
     else { root.classList.remove('js3d'); Balade.desarme(); }
   }
